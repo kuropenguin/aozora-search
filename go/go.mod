@@ -1,4 +1,4 @@
-module github.com/kuropenguin/aozora-search
+module github.com/kuropenguin/aozora-search/go
 
 go 1.19
 
