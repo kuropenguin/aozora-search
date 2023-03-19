@@ -30,7 +30,7 @@ func findEntities(siteURL string) ([]Entry, error) {
 }
 
 func main() {
-	listURL := "https://www.aozora.gr.jp/index_pages/person879.html"
+	listURL := "https://www.aozora.gr.jp/index_pages/person1257.html"
 	entries, err := findEntities(listURL)
 	if err != nil {
 		log.Fatal(err)
