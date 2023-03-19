@@ -1,0 +1,16 @@
+[build]
+  cmd = "go build ./cmd/aozora-coller/main.go -o ./tmp/main ."
+  bin = "tmp/main"
+  log = "build-errors.log"
+
+[watch]
+  includes = ["./cmd/aozora-coller/main.go"]
+  excludes = ["./tmp"]
+
+[logger]
+  level = "info"
+  color = true
+
+[serve]
+  command = "./tmp/main"
+  port = 8080

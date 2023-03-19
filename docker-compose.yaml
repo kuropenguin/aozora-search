@@ -1,0 +1,16 @@
+version: "3.8"
+services:
+  web:
+    build:
+      context: ./go
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./go:/app
+    depends_on:
+      - db
+  db:
+    build:
+      context: ./db
+    volumes:
+      - ./db/data:/data
