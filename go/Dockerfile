@@ -9,4 +9,4 @@ COPY . .
 
 RUN go get -v github.com/cosmtrek/air
 
-CMD ["air"]
+CMD ["air", "-c", ".air.toml"]
