@@ -14,3 +14,5 @@ services:
       context: ./db
     volumes:
       - ./db/data:/data
+    stdin_open: true
+    tty: true
