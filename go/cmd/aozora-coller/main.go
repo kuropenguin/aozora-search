@@ -3,17 +3,22 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 	"path"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/ikawaha/kagome-dict/ipa"
+	"github.com/ikawaha/kagome/v2/tokenizer"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type Entry struct {
@@ -98,9 +103,85 @@ func main() {
 	// 	fmt.Println(entry.SiteURL)
 	// 	fmt.Println(content)
 	// }
-	for {
-		fmt.Println("##########")
-		time.Sleep(1 * time.Second)
+
+	db, err := sql.Open("sqlite3", "database.sqlite")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	queries := []string{
+		`DROP TABLE IF EXISTS authors`,
+		`DROP TABLE IF EXISTS contents`,
+		`DROP TABLE IF EXISTS contents_fts`,
+		`CREATE TABLE IF NOT EXISTS authors (author_id TEXT, author TEXT, PRIMARY KEY(author_id))`,
+		`CREATE TABLE IF NOT EXISTS contents (author_id TEXT, title_id TEXT, title TEXT, content TEXT, PRIMARY KEY(author_id, title_id))`,
+		`CREATE VIRTUAL TABLE IF NOT EXISTS contents_fts USING fts4(words)`,
+	}
+	for _, query := range queries {
+		_, err := db.Exec(query)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	content := "abc kuro aba"
+
+	res, err := db.Exec(`INSERT INTO contents(author_id, title_id, title, content) VALUES (?,?,?,?)`,
+		"000879",
+		"14",
+		"あばばばば",
+		content,
+	)
+	if err != nil {
+		log.Fatalf("insert into contents error : %v\n", err)
+	}
+	docID, err := res.LastInsertId()
+	if err != nil {
+		log.Fatalf("last insert id error : %v\n", err)
+	}
+
+	t, err := tokenizer.New(ipa.Dict(), tokenizer.OmitBosEos())
+	if err != nil {
+		log.Fatalf("tokenizer error : %v\n", err)
+	}
+	seg := t.Wakati(content)
+	_, err = db.Exec(`
+	INSERT INTO contents_fts(docid, words) values(?,?)
+	`,
+		docID,
+		strings.Join(seg, " "),
+	)
+	if err != nil {
+		log.Fatalf("insert into contents_fts error : %v\n", err)
+	}
+
+	query := "kuro AND aba"
+	rows, err := db.Query(`
+	SELECT
+		a.author
+		, c.title
+	FROM
+		contents c
+	INNER JOIN authors a
+		ON a.author_id = c.author_id
+	INNER JOIN contents_fts f
+		ON c.rowid = f.docid
+		AND words MATCH ?
+	`, query)
+
+	if err != nil {
+		log.Fatalf("select error : %v\n", err)
+		log.Fatal(err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var author, title string
+		if err := rows.Scan(&author, &title); err != nil {
+			log.Fatalf("scan error : %v\n", err)
+			log.Fatal(err)
+		}
+		fmt.Println(author, title)
 	}
 }
 
