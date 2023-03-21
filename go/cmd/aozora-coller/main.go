@@ -88,32 +88,13 @@ func findAuthorAndZIP(siteURL string) (string, string) {
 	return author, u.String()
 }
 
-func main() {
-	// listURL := "https://www.aozora.gr.jp/index_pages/person1257.html"
-	// entries, err := findEntities(listURL)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// for _, entry := range entries {
-	// 	content, err := extractText(entry.ZipURL)
-	// 	if err != nil {
-	// 		log.Println(err)
-	// 		continue
-	// 	}
-	// 	fmt.Println(entry.SiteURL)
-	// 	fmt.Println(content)
-	// }
-
-	db, err := sql.Open("sqlite3", "database.sqlite")
+func setupDB(dns string) (*sql.DB, error) {
+	db, err := sql.Open("sqlite3", dns)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
-	defer db.Close()
 
 	queries := []string{
-		`DROP TABLE IF EXISTS authors`,
-		`DROP TABLE IF EXISTS contents`,
-		`DROP TABLE IF EXISTS contents_fts`,
 		`CREATE TABLE IF NOT EXISTS authors (author_id TEXT, author TEXT, PRIMARY KEY(author_id))`,
 		`CREATE TABLE IF NOT EXISTS contents (author_id TEXT, title_id TEXT, title TEXT, content TEXT, PRIMARY KEY(author_id, title_id))`,
 		`CREATE VIRTUAL TABLE IF NOT EXISTS contents_fts USING fts4(words)`,
@@ -121,68 +102,110 @@ func main() {
 	for _, query := range queries {
 		_, err := db.Exec(query)
 		if err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
 	}
-	content := "abc kuro aba"
+	return db, nil
+}
 
-	res, err := db.Exec(`INSERT INTO contents(author_id, title_id, title, content) VALUES (?,?,?,?)`,
-		"000879",
-		"14",
-		"あばばばば",
+func addEntry(db *sql.DB, entry *Entry, content string) error {
+	_, err := db.Exec(`
+	REPLACE INTO authors(author_id, author) VALUES (?,?)
+	`,
+		entry.AuthorID,
+		entry.Author,
+	)
+	if err != nil {
+		return err
+	}
+	res, err := db.Exec(`
+	REPLACE INTO contents(author_id, title_id, title, content) VALUES (?,?,?,?)
+	`,
+		entry.AuthorID,
+		entry.TitleID,
+		entry.Title,
 		content,
 	)
 	if err != nil {
-		log.Fatalf("insert into contents error : %v\n", err)
+		return err
 	}
 	docID, err := res.LastInsertId()
 	if err != nil {
-		log.Fatalf("last insert id error : %v\n", err)
+		return err
 	}
 
 	t, err := tokenizer.New(ipa.Dict(), tokenizer.OmitBosEos())
 	if err != nil {
-		log.Fatalf("tokenizer error : %v\n", err)
+		return err
 	}
 	seg := t.Wakati(content)
 	_, err = db.Exec(`
-	INSERT INTO contents_fts(docid, words) values(?,?)
+	REPLACE INTO contents_fts(docid, words) values(?,?)
 	`,
 		docID,
 		strings.Join(seg, " "),
 	)
 	if err != nil {
-		log.Fatalf("insert into contents_fts error : %v\n", err)
+		return err
 	}
 
-	query := "kuro AND aba"
-	rows, err := db.Query(`
-	SELECT
-		a.author
-		, c.title
-	FROM
-		contents c
-	INNER JOIN authors a
-		ON a.author_id = c.author_id
-	INNER JOIN contents_fts f
-		ON c.rowid = f.docid
-		AND words MATCH ?
-	`, query)
+	return nil
+}
 
+func main() {
+	db, err := setupDB("database.sqlite")
 	if err != nil {
-		log.Fatalf("select error : %v\n", err)
 		log.Fatal(err)
 	}
-	defer rows.Close()
+	defer db.Close()
 
-	for rows.Next() {
-		var author, title string
-		if err := rows.Scan(&author, &title); err != nil {
-			log.Fatalf("scan error : %v\n", err)
-			log.Fatal(err)
-		}
-		fmt.Println(author, title)
+	listURL := "https://www.aozora.gr.jp/index_pages/person1257.html"
+	entries, err := findEntities(listURL)
+	if err != nil {
+		log.Fatal(err)
 	}
+	for _, entry := range entries {
+		content, err := extractText(entry.ZipURL)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		fmt.Println(string(content))
+		err = addEntry(db, &entry, content)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+	}
+
+	// query := "kuro AND aba"
+	// rows, err := db.Query(`
+	// SELECT
+	// 	a.author
+	// 	, c.title
+	// FROM
+	// 	contents c
+	// INNER JOIN authors a
+	// 	ON a.author_id = c.author_id
+	// INNER JOIN contents_fts f
+	// 	ON c.rowid = f.docid
+	// 	AND words MATCH ?
+	// `, query)
+
+	// if err != nil {
+	// 	log.Fatalf("select error : %v\n", err)
+	// 	log.Fatal(err)
+	// }
+	// defer rows.Close()
+
+	// for rows.Next() {
+	// 	var author, title string
+	// 	if err := rows.Scan(&author, &title); err != nil {
+	// 		log.Fatalf("scan error : %v\n", err)
+	// 		log.Fatal(err)
+	// 	}
+	// 	fmt.Println(author, title)
+	// }
 }
 
 func extractText(zipURL string) (string, error) {
